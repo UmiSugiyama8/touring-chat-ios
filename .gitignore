@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+
+# Xcode user-specific data and build output
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Firebase credentials and local state
+GoogleService-Info.plist
+.firebaserc
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+firebase-functions/node_modules/
+firebase-functions/.env
+firebase-functions/.env.*
+firebase-adminsdk*.json
+*service-account*.json
+
+# Apple signing credentials
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
