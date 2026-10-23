@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import UserNotifications
-import FirebaseMessaging
 
 final class LocalNotificationManager {
     static let shared = LocalNotificationManager()
@@ -14,40 +13,14 @@ final class LocalNotificationManager {
                 print("Notification permission error: \(error)")
             } else {
                 print("Notification permission granted: \(granted)")
-                if granted {
-                    DispatchQueue.main.async {
-                        UIApplication.shared.registerForRemoteNotifications()
-                    }
-                }
             }
         }
     }
 
-    func updateAPNSToken(_ deviceToken: Data) {
-        Messaging.messaging().apnsToken = deviceToken
-    }
-
-    func fetchFCMToken(completion: @escaping (String?) -> Void) {
-        Messaging.messaging().token { token, error in
-            if let error = error {
-                print("Failed to fetch FCM token: \(error)")
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
-                return
-            }
-
-            DispatchQueue.main.async {
-                completion(token)
-            }
-        }
-    }
-
-    func notifyNewMessage(groupName: String, senderName: String, text: String) {
+    func notifyNewMessage(groupName: String) {
         let content = UNMutableNotificationContent()
         content.title = groupName
-        content.subtitle = senderName
-        content.body = text
+        content.body = "新しいメッセージが届きました"
         content.sound = .default
 
         let request = UNNotificationRequest(

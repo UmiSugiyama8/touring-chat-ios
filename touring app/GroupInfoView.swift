@@ -12,6 +12,8 @@ struct GroupInfoView: View {
     @State private var members: [GroupMember] = []
     @State private var showingRename = false
     @State private var showingDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showingDeleteError = false
     @State private var showingMeetingEditor = false
     @State private var editedGroupName = ""
     @State private var copiedCodeMessage: String?
@@ -21,11 +23,14 @@ struct GroupInfoView: View {
     }
 
     private var isOwner: Bool {
-        group.ownerDeviceID == currentDeviceID()
+        if !group.ownerAuthUID.isEmpty {
+            return group.ownerAuthUID == FirebaseAuthService.currentUID
+        }
+        return group.ownerDeviceID == currentDeviceID()
     }
 
     private var currentMember: GroupMember? {
-        members.first { $0.id == currentDeviceID() }
+        members.first { $0.id == FirebaseAuthService.currentUID }
     }
 
     private var meetingTimeText: String {
@@ -60,7 +65,7 @@ struct GroupInfoView: View {
                                     .font(.caption)
                                     .foregroundColor(.gray)
 
-                                if let url = URL(string: group.meetingPlaceURL), !group.meetingPlaceURL.isEmpty {
+                                if let url = safeAppleMapsURL(from: group.meetingPlaceURL) {
                                     Button {
                                         UIApplication.shared.open(url)
                                     } label: {
@@ -120,7 +125,7 @@ struct GroupInfoView: View {
                                 .foregroundColor(.gray)
                         } else {
                             ForEach(members) { member in
-                                let isMe = member.displayName == displayName
+                                let isMe = member.id == FirebaseAuthService.currentUID
 
                                 HStack(spacing: 12) {
                                     ZStack(alignment: .bottomTrailing) {
@@ -190,23 +195,26 @@ struct GroupInfoView: View {
                             Button(role: .destructive) {
                                 showingDeleteConfirm = true
                             } label: {
-                                Label("グループを削除", systemImage: "trash")
+                                Label(isDeleting ? "削除中…" : "グループを削除", systemImage: "trash")
                             }
+                            .disabled(isDeleting)
                         }
                     }
 
-                    Section {
-                        Button(role: .destructive) {
-                            isPresented = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                showingLeaveConfirm = true
-                            }
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Text("このグループを退出")
-                                    .fontWeight(.semibold)
-                                Spacer()
+                    if !isOwner {
+                        Section {
+                            Button(role: .destructive) {
+                                isPresented = false
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    showingLeaveConfirm = true
+                                }
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Text("このグループを退出")
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                }
                             }
                         }
                     }
@@ -254,13 +262,24 @@ struct GroupInfoView: View {
             .alert("グループを削除しますか？", isPresented: $showingDeleteConfirm) {
                 Button("キャンセル", role: .cancel) {}
                 Button("削除", role: .destructive) {
-                    firebaseService.deleteGroup(groupID: group.id) {
+                    isDeleting = true
+                    firebaseService.deleteGroup(groupID: group.id) { success in
+                        isDeleting = false
+                        guard success else {
+                            showingDeleteError = true
+                            return
+                        }
                         isPresented = false
                         onDeleteGroup()
                     }
                 }
             } message: {
-                Text("この操作は取り消せません。このグループは一覧から削除されます。")
+                Text("この操作は取り消せません。グループとメッセージ、メンバー情報を削除します。")
+            }
+            .alert("削除を完了できませんでした", isPresented: $showingDeleteError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("通信状況を確認して、もう一度グループを削除してください。削除中のグループでは新規投稿・参加を停止します。")
             }
             .sheet(isPresented: $showingMeetingEditor) {
                 MeetingInfoEditView(group: group, firebaseService: firebaseService, isPresented: $showingMeetingEditor)
@@ -278,6 +297,13 @@ struct GroupInfoView: View {
             }
         }
     }
+
+    private func safeAppleMapsURL(from text: String) -> URL? {
+        guard let url = URL(string: text),
+              url.scheme == "https",
+              url.host == "maps.apple.com" else { return nil }
+        return url
+    }
 }
 
 struct MeetingInfoEditView: View {
@@ -289,6 +315,7 @@ struct MeetingInfoEditView: View {
     @State private var hasMeetingTime: Bool
     @State private var meetingTime: Date
     @State private var showingLocationError = false
+    @State private var showingURLValidationError = false
     @StateObject private var locationSharingManager = LocationSharingManager()
 
     init(group: TouringGroup, firebaseService: FirebaseGroupService, isPresented: Binding<Bool>) {
@@ -332,6 +359,11 @@ struct MeetingInfoEditView: View {
             } message: {
                 Text(locationSharingManager.errorMessage ?? "位置情報の許可を確認してください。")
             }
+            .alert("地図URLを確認してください", isPresented: $showingURLValidationError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("空欄にするか、https://maps.apple.com で始まるURLを入力してください。")
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("キャンセル") {
@@ -341,10 +373,15 @@ struct MeetingInfoEditView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("保存") {
+                        let trimmedURL = placeURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard isValidMeetingURL(trimmedURL) else {
+                            showingURLValidationError = true
+                            return
+                        }
                         firebaseService.updateMeetingInfo(
                             groupID: group.id,
                             placeName: placeName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            placeURL: placeURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                            placeURL: trimmedURL,
                             meetingTime: hasMeetingTime ? meetingTime : nil
                         ) {
                             isPresented = false
@@ -366,5 +403,11 @@ struct MeetingInfoEditView: View {
                 showingLocationError = true
             }
         }
+    }
+
+    private func isValidMeetingURL(_ text: String) -> Bool {
+        guard !text.isEmpty else { return true }
+        guard let url = URL(string: text) else { return false }
+        return url.scheme == "https" && url.host == "maps.apple.com"
     }
 }

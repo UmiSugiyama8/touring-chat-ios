@@ -1,87 +1,81 @@
 # ツーリングチャット
 
-バイク仲間とのツーリング中の連絡を、短く・素早く・分かりやすくするためのiOSグループチャットアプリです。
+バイク仲間とのツーリング中の連絡を、短く・素早く・分かりやすくするiOSグループチャットアプリです。
 
-> 安全のため、運転中のスマートフォン操作は想定していません。操作は必ず停車中、または周囲の安全を確認できる状態で行ってください。
+FirebaseのSpark無料プランを前提とした開発中の構成です。GitHubのコード更新と、Firebaseへの本番反映・App Storeへの公開は別の作業です。
 
-## アプリ概要
-
-ツーリングでは「出発する」「到着」「遅れる」「止まる」など、同じ内容を何度も共有します。本アプリは、こうした連絡を定型メッセージとしてワンタップで送信できるようにし、グループ内の状況確認を簡単にします。
+> 運転中のスマートフォン操作は想定していません。必ず安全な場所に停車して操作してください。
 
 ## 主な機能
 
 - 6桁の参加コードによるグループ作成・参加
-- Firestoreを利用したリアルタイムチャット
-- 出発・到着・遅延・停止などの定型メッセージ送信
-- 定型メッセージの追加、編集、並べ替え
-- Apple MapsのURLを利用した現在地共有
-- メンバーの到着状況確認
-- FCMとAPNsを利用したメッセージ通知
-- 招待URLの共有とアプリ内参加導線
-- 表示名、プロフィールカラー、アイコンの設定
-
-## スクリーンショット
-
-個人情報・参加コード・位置情報の公開を避けるため、画像の掲載を停止しています。
+- Firestoreによるリアルタイムチャット
+- 出発・到着・遅延・停止などの定型メッセージ送信と編集
+- Apple MapsのURLによる現在地共有
+- メンバーの到着状況、集合場所と集合時間の管理
+- アプリ起動中のローカル通知
+- 招待URLの共有、表示名・カラー・アイコンの設定
 
 ## 使用技術
 
 - Swift / SwiftUI
 - Firebase Authentication（匿名認証）
-- Cloud Firestore（グループ、メンバー、メッセージの同期）
-- Firebase Cloud Functions（Firestoreイベントを起点とする通知処理）
-- Firebase Cloud Messaging / APNs
+- Cloud Firestore / Firestore Security Rules
 - Core Location / Apple Maps URL
-- UserDefaults（端末内設定と参加グループ情報）
-- Swift Package Manager
+- UserDefaults / Swift Package Manager
 
-## 実装のポイント
+## セキュリティと無料構成
 
-### リアルタイム同期
+`firestore.rules` は更新版アプリ向けの最終ルールです。認証UIDに基づいてグループ参加者だけにアクセスを許可し、設定変更とグループ削除は所有者だけに制限します。参加・退出・到着状態は一括書き込みで人数と整合させます。削除中の新規投稿・参加を停止し、子データから順に削除します。通信失敗後は所有者が削除を再試行できます。
 
-Firestoreのスナップショットリスナーを使用し、グループ、メッセージ、到着状況の変更を画面へ即時反映しています。
+これらの保護は最終ルールをデプロイして初めて有効になります。旧版互換の移行用ルールは同等の保護を提供しません。更新版アプリと本番反映の順序は [SECURITY_DEPLOYMENT.md](SECURITY_DEPLOYMENT.md) を参照してください。
 
-### 匿名認証
+Cloud Functionsは本番利用しません。FCM/APNsによるアプリ終了中のリモートプッシュ通知は利用できません。起動中はFirestoreの変更からローカル通知を表示できます。Sparkの無料枠には上限があり、無制限に利用できる構成ではありません。
 
-登録画面を設けず、Firebase Authenticationの匿名認証で利用を開始できます。認証UIDと端末内IDを用途に応じて使い分けています。
-
-### プッシュ通知
-
-メッセージ作成をCloud Functionsで検知し、送信者以外のメンバーへFCM経由で通知します。iOS端末への最終配信にはAPNsを使用します。
-
-### 現在地共有
-
-位置情報を取得し、緯度・経度をApple Mapsで開けるURLへ変換してチャットに投稿します。
-
-## 担当範囲
-
-個人開発として、企画、要件整理、UI設計、実装方針の決定、Firebase構築、実機・シミュレーターでの検証まで担当しています。開発では生成AIも活用し、提案されたコードを実機で検証しながら、要件に合うよう修正と改善を重ねました。
+6桁コードにはサーバー側の試行回数制限がありません。コードは公開投稿に載せず、参加者へ直接共有してください。匿名認証のアカウントは、再インストール等で端末の認証状態を失うと同じUIDを復元できない場合があります。
 
 ## プロジェクト構成
 
 ```text
 touring app/                    iOSアプリ本体
 touring watch app Watch App/    Apple Watch向け試作コード
-firebase-functions/             通知用Cloud Functions
-firestore.rules                 Firestoreセキュリティルール
-AppStoreScreenshots/            App Store掲載画像
+firebase-functions/             ルールテストとFunctions試作（本番未使用）
+firestore.rules                 更新版向け最終ルール
+firestore.migration.rules       旧版互換の一時的な移行用ルール
+firebase.json                   最終ルールのデプロイ設定（Functionsを含まない）
+SECURITY_DEPLOYMENT.md           無料構成・本番切替手順
 ```
-
-Apple Watch向けコードは試作段階であり、iOSアプリ本体とは分けて管理しています。
 
 ## ローカルでの起動
 
-1. このリポジトリをクローンします。
-2. `touring app.xcodeproj` をXcodeで開きます。
-3. FirebaseでiOSアプリを作成し、Authenticationの匿名認証、Firestore、Cloud Messagingを有効にします。
-4. Firebaseから取得した `GoogleService-Info.plist` を `touring app/` に配置します。
-5. XcodeのSigning & Capabilitiesで自分のTeamとBundle Identifierを設定します。
-6. 必要に応じて `firestore.rules` と `firebase-functions/` を自身のFirebaseプロジェクトへデプロイします。
-7. iPhoneシミュレーターまたは実機で実行します。
+1. リポジトリをクローンし、`touring app.xcodeproj` をXcodeで開きます。
+2. 自分のFirebaseプロジェクトをSparkプランで作成し、匿名認証とFirestoreを有効にします。
+3. Firebaseから取得した `GoogleService-Info.plist` を `touring app/` に配置します。項目例は `GoogleService-Info.plist.example` を参照してください。
+4. 新規開発環境では自分のTeamとBundle Identifierを設定します。既存アプリを更新する場合は識別子を変更しないでください。
+5. 新規のテスト用Firebaseには最終ルールを使用します。既存データがある環境は先に `SECURITY_DEPLOYMENT.md` を確認してください。
+6. iPhoneシミュレーターまたは実機で実行します。
 
-設定ファイルの項目例は `GoogleService-Info.plist.example` を参照してください。実際のFirebase設定、証明書、秘密鍵、個人用Xcodeデータはリポジトリに含めていません。
+Firebase設定、秘密鍵、証明書、個人用Xcodeデータはコミットしないでください。Cloud Functionsをデプロイしたり、Blazeへ変更する必要はありません。
 
-## 公開範囲
+## テスト
+
+ルールテストは実データを使わず、`demo-touring-app` のローカルエミュレーターで実行します。Node.js、Java、Firebase CLIが必要です。CLIとJavaの対応バージョンを合わせてください。
+
+```bash
+npm --prefix firebase-functions ci --ignore-scripts
+# このリポジトリで検証済みのCLI。Java 11で実行しています。
+npx firebase-tools@13.35.1 emulators:exec --only firestore --project demo-touring-app "npm --prefix firebase-functions run test:rules"
+npm --prefix firebase-functions run check
+npm --prefix firebase-functions run audit:production
+```
+
+権限テストは作成・参加・投稿・編集の正常系に加え、未認証アクセス、第三者による閲覧・なりすまし・無断変更、人数の不整合、削除中の新規書き込み、旧形式からの本人移行を検証します。これだけで実機の操作性や本番設定を保証するものではありません。
+
+## スクリーンショットと公開範囲
+
+個人情報・参加コード・位置情報の公開を避けるため、画像の掲載を停止しています。削除前のGit履歴には画像が残る場合があります。
+
+個人開発として企画、要件整理、UI設計、Firebase構築、実装・検証を進めています。生成AIも活用し、提案コードを要件と照らし合わせながら改善しています。
 
 このリポジトリはポートフォリオおよび技術確認を目的として公開しています。オープンソースライセンスは付与していません。無断での再配布、商用利用、アプリの複製はご遠慮ください。
 

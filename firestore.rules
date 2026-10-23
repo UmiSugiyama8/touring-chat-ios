@@ -6,15 +6,324 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function groupPath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId);
+    }
+
+    function memberPath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid);
+    }
+
+    function messagePath(groupId, messageId) {
+      return /databases/$(database)/documents/groups/$(groupId)/messages/$(messageId);
+    }
+
+    function codePath(code) {
+      return /databases/$(database)/documents/groupCodes/$(code);
+    }
+
+    function isMember(groupId) {
+      return signedIn()
+        && exists(groupPath(groupId))
+        && exists(memberPath(groupId))
+        && get(memberPath(groupId)).data.authUID == request.auth.uid;
+    }
+
+    function isOwner(groupId) {
+      return signedIn()
+        && exists(groupPath(groupId))
+        && get(groupPath(groupId)).data.ownerAuthUID == request.auth.uid;
+    }
+
+    function activeGroup(groupId) {
+      return exists(groupPath(groupId))
+        && get(groupPath(groupId)).data.get('isDeleting', false) == false;
+    }
+
+    function validGroupId(groupId) {
+      return groupId.matches('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$');
+    }
+
+    function validCode(code) {
+      return code is string && code.matches('^[0-9]{6}$');
+    }
+
+    function validProfile(data) {
+      return data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 40
+        && data.profileColorRawValue in ['orange', 'blue', 'green', 'red', 'purple', 'pink']
+        && data.profileIconRawValue in [
+          'tortoise.fill', 'hare.fill', 'pawprint.fill', 'bird.fill',
+          'ladybug.fill', 'ant.fill', 'motorcycle', 'map.fill',
+          'location.fill', 'flag.checkered', 'fuelpump.fill', 'helmet'
+        ]
+        && data.deviceID is string
+        && data.deviceID.size() > 0
+        && data.deviceID.size() <= 100
+        && data.authUID == request.auth.uid
+        && data.isArrived is bool
+        && data.updatedAt == request.time
+        && (!('joinedAt' in data) || data.joinedAt is timestamp)
+        && (!('joinCode' in data) || validCode(data.joinCode))
+        && !('fcmToken' in data);
+    }
+
+    function validGroupCreate(groupId) {
+      let data = request.resource.data;
+      return signedIn()
+        && validGroupId(groupId)
+        && data.keys().hasOnly([
+          'name', 'code', 'ownerAuthUID', 'ownerDeviceID', 'memberCount',
+          'arrivedCount', 'lastMessageText', 'createdAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 60
+        && validCode(data.code)
+        && data.ownerAuthUID == request.auth.uid
+        && data.ownerDeviceID is string
+        && data.ownerDeviceID.size() > 0
+        && data.ownerDeviceID.size() <= 100
+        && data.memberCount == 1
+        && data.arrivedCount == 0
+        && data.lastMessageText == ''
+        && data.createdAt == request.time
+        && existsAfter(memberPath(groupId))
+        && getAfter(memberPath(groupId)).data.authUID == request.auth.uid
+        && existsAfter(codePath(data.code))
+        && getAfter(codePath(data.code)).data.groupID == groupId;
+    }
+
+    function validOwnerUpdate(groupId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let placeName = request.resource.data.get('meetingPlaceName', '');
+      let placeURL = request.resource.data.get('meetingPlaceURL', '');
+      return isOwner(groupId)
+        && changed.hasOnly([
+          'name', 'meetingPlaceName', 'meetingPlaceURL', 'meetingTime', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && placeName is string
+        && placeName.size() <= 120
+        && placeURL is string
+        && placeURL.size() <= 1000
+        && (placeURL == '' || placeURL.matches('https://maps\\.apple\\.com/.*'))
+        && (!('meetingTime' in request.resource.data)
+          || request.resource.data.meetingTime is timestamp)
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validMessageSummaryUpdate(groupId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let messageId = request.resource.data.lastMessageID;
+      let message = getAfter(messagePath(groupId, messageId)).data;
+      return isMember(groupId)
+        && changed.hasOnly([
+          'lastMessageText', 'lastMessageAt', 'lastMessageID', 'updatedAt'
+        ])
+        && messageId is string
+        && existsAfter(messagePath(groupId, messageId))
+        && message.senderAuthUID == request.auth.uid
+        && message.text == request.resource.data.lastMessageText
+        && message.sentAt == request.time
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validJoinCountUpdate(groupId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return signedIn()
+        && changed.hasOnly(['memberCount', 'updatedAt'])
+        && !exists(memberPath(groupId))
+        && existsAfter(memberPath(groupId))
+        && request.resource.data.memberCount == resource.data.memberCount + 1
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validLeaveCountUpdate(groupId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return signedIn()
+        && resource.data.ownerAuthUID != request.auth.uid
+        && changed.hasOnly(['memberCount', 'arrivedCount', 'updatedAt'])
+        && exists(memberPath(groupId))
+        && !existsAfter(memberPath(groupId))
+        && request.resource.data.memberCount == resource.data.memberCount - 1
+        && request.resource.data.memberCount >= 1
+        && request.resource.data.arrivedCount == resource.data.arrivedCount
+          - (get(memberPath(groupId)).data.isArrived ? 1 : 0)
+        && request.resource.data.arrivedCount >= 0
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validDeletionStart(groupId) {
+      return isOwner(groupId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isDeleting', 'updatedAt'])
+        && request.resource.data.isDeleting == true
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validInviteJoin(groupId, data) {
+      let group = get(groupPath(groupId)).data;
+      return data.get('joinCode', '') == group.code
+        && exists(codePath(group.code))
+        && get(codePath(group.code)).data.groupID == groupId
+        && data.isArrived == false
+        && getAfter(groupPath(groupId)).data.memberCount == group.memberCount + 1
+        && getAfter(groupPath(groupId)).data.updatedAt == request.time;
+    }
+
+    function validLegacyMigration(groupId, data) {
+      let legacy = /databases/$(database)/documents/groups/$(groupId)/members/$(data.deviceID);
+      return data.deviceID != request.auth.uid
+        && exists(legacy)
+        && get(legacy).data.authUID == request.auth.uid
+        && data.isArrived == get(legacy).data.get('isArrived', false)
+        && !existsAfter(legacy);
+    }
+
+    function validArrivalCountUpdate(groupId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let before = get(memberPath(groupId)).data.isArrived;
+      let after = getAfter(memberPath(groupId)).data.isArrived;
+      return isMember(groupId)
+        && changed.hasOnly(['arrivedCount', 'updatedAt'])
+        && existsAfter(memberPath(groupId))
+        && before != after
+        && request.resource.data.arrivedCount
+          == resource.data.arrivedCount + (after ? 1 : -1)
+        && request.resource.data.arrivedCount >= 0
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    match /groupCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && validCode(code)
+        && request.resource.data.keys().hasOnly([
+          'groupID', 'ownerAuthUID', 'createdAt'
+        ])
+        && request.resource.data.groupID is string
+        && request.resource.data.ownerAuthUID == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && existsAfter(groupPath(request.resource.data.groupID))
+        && getAfter(groupPath(request.resource.data.groupID)).data.code == code
+        && getAfter(groupPath(request.resource.data.groupID)).data.ownerAuthUID == request.auth.uid;
+      allow update: if false;
+      allow delete: if signedIn()
+        && resource.data.ownerAuthUID == request.auth.uid
+        && !existsAfter(groupPath(resource.data.groupID));
+    }
+
     match /groups/{groupId} {
-      allow read, create, update, delete: if signedIn();
+      allow get, list: if isMember(groupId)
+        || (signedIn() && resource.data.ownerAuthUID == request.auth.uid);
+      allow create: if validGroupCreate(groupId);
+      allow update: if validDeletionStart(groupId)
+        || (activeGroup(groupId) && (validOwnerUpdate(groupId)
+        || validMessageSummaryUpdate(groupId)
+        || validJoinCountUpdate(groupId)
+        || validLeaveCountUpdate(groupId)
+        || validArrivalCountUpdate(groupId)));
+      allow delete: if isOwner(groupId)
+        && resource.data.get('isDeleting', false) == true
+        && !existsAfter(memberPath(groupId))
+        && !existsAfter(codePath(resource.data.code));
 
       match /members/{memberId} {
-        allow read, create, update, delete: if signedIn();
+        allow get: if isMember(groupId)
+          || (signedIn() && memberId == request.auth.uid)
+          || (signedIn() && resource.data.authUID == request.auth.uid);
+        allow list: if isMember(groupId);
+        allow create: if signedIn()
+          && memberId == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'displayName', 'profileColorRawValue', 'profileIconRawValue',
+            'deviceID', 'authUID', 'isArrived', 'joinedAt', 'updatedAt', 'joinCode'
+          ])
+          && validProfile(request.resource.data)
+          && (
+            (!exists(groupPath(groupId))
+              && getAfter(groupPath(groupId)).data.ownerAuthUID == request.auth.uid
+              && request.resource.data.isArrived == false)
+            || (activeGroup(groupId) && (
+              get(groupPath(groupId)).data.ownerAuthUID == request.auth.uid
+              || validInviteJoin(groupId, request.resource.data)
+              || validLegacyMigration(groupId, request.resource.data)
+            ))
+          );
+        allow update: if signedIn()
+          && activeGroup(groupId)
+          && isMember(groupId)
+          && memberId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'displayName', 'profileColorRawValue', 'profileIconRawValue',
+            'isArrived', 'updatedAt', 'fcmToken'
+          ])
+          && validProfile(request.resource.data)
+          && (request.resource.data.isArrived == resource.data.isArrived
+            || (getAfter(groupPath(groupId)).data.arrivedCount
+              == get(groupPath(groupId)).data.arrivedCount
+                + (request.resource.data.isArrived ? 1 : -1)
+              && getAfter(groupPath(groupId)).data.updatedAt == request.time));
+        allow delete: if signedIn()
+          && (
+            (memberId == request.auth.uid && activeGroup(groupId)
+              && get(groupPath(groupId)).data.ownerAuthUID != request.auth.uid
+              && getAfter(groupPath(groupId)).data.memberCount
+                == get(groupPath(groupId)).data.memberCount - 1
+              && getAfter(groupPath(groupId)).data.arrivedCount
+                == get(groupPath(groupId)).data.arrivedCount
+                  - (resource.data.isArrived ? 1 : 0)
+              && getAfter(groupPath(groupId)).data.updatedAt == request.time)
+            || (memberId != request.auth.uid
+              && resource.data.authUID == request.auth.uid
+              && getAfter(memberPath(groupId)).data.authUID == request.auth.uid)
+            || (isOwner(groupId)
+              && get(groupPath(groupId)).data.get('isDeleting', false) == true
+              && (memberId != request.auth.uid || !existsAfter(groupPath(groupId))))
+          );
       }
 
       match /messages/{messageId} {
-        allow read, create, update, delete: if signedIn();
+        allow read: if isMember(groupId);
+        allow create: if isMember(groupId)
+          && activeGroup(groupId)
+          && request.resource.data.keys().hasOnly([
+            'text', 'senderName', 'senderDeviceID', 'senderAuthUID', 'sentAt'
+          ])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.senderAuthUID == request.auth.uid
+          && request.resource.data.senderName == get(memberPath(groupId)).data.displayName
+          && request.resource.data.senderDeviceID == get(memberPath(groupId)).data.deviceID
+          && request.resource.data.sentAt == request.time;
+        allow update: if isMember(groupId)
+          && activeGroup(groupId)
+          && (
+            resource.data.get('senderAuthUID', '') == request.auth.uid
+            || (!('senderAuthUID' in resource.data)
+              && resource.data.senderDeviceID == get(memberPath(groupId)).data.deviceID)
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'text', 'editedAt'
+          ])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.editedAt == request.time;
+        allow delete: if isOwner(groupId)
+          || (isMember(groupId)
+            && (
+              resource.data.get('senderAuthUID', '') == request.auth.uid
+              || (!('senderAuthUID' in resource.data)
+                && resource.data.senderDeviceID == get(memberPath(groupId)).data.deviceID)
+            ));
       }
     }
   }
