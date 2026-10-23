@@ -181,9 +181,9 @@ struct GroupDetailView: View {
     private func chatRow(for message: ChatMessage) -> some View {
         ChatMessageRow(
             message: message,
-            isMe: message.senderName == displayName,
+            isMe: isMyMessage(message),
             timeText: messageTimeFormatter.string(from: message.sentAt),
-            canEdit: message.senderDeviceID == currentDeviceID(),
+            canEdit: isMyMessage(message),
             onOpenMap: {
                 openMapIfNeeded(from: message.text)
             },
@@ -214,11 +214,9 @@ struct GroupDetailView: View {
             }
 
             let newMessages = fetchedMessages.filter { !previousMessageIDs.contains($0.id) }
-            for message in newMessages where message.senderName != displayName {
+            for message in newMessages where !isMyMessage(message) {
                 LocalNotificationManager.shared.notifyNewMessage(
-                    groupName: group.name,
-                    senderName: message.senderName,
-                    text: message.text
+                    groupName: group.name
                 )
             }
         }
@@ -226,6 +224,13 @@ struct GroupDetailView: View {
         firebaseService.listenMembers(for: group.id) { fetchedMembers in
             members = fetchedMembers
         }
+    }
+
+    private func isMyMessage(_ message: ChatMessage) -> Bool {
+        if !message.senderAuthUID.isEmpty {
+            return message.senderAuthUID == FirebaseAuthService.currentUID
+        }
+        return message.senderDeviceID == currentDeviceID()
     }
 
     private func saveEditedMessage() {

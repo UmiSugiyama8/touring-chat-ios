@@ -7,6 +7,8 @@ struct CreateGroupView: View {
     let profileColorRawValue: String
     let profileIconRawValue: String
     @State private var groupName = ""
+    @State private var isCreating = false
+    @State private var showCreateError = false
 
     var body: some View {
         NavigationStack {
@@ -18,17 +20,23 @@ struct CreateGroupView: View {
                 Button(action: {
                     let trimmed = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
+                        isCreating = true
                         firebaseService.createGroup(
                             name: trimmed,
                             displayName: displayName,
                             profileColorRawValue: profileColorRawValue,
                             profileIconRawValue: profileIconRawValue
-                        ) {
-                            isPresented = false
+                        ) { success in
+                            isCreating = false
+                            if success {
+                                isPresented = false
+                            } else {
+                                showCreateError = true
+                            }
                         }
                     }
                 }) {
-                    Text("作成")
+                    Text(isCreating ? "作成中..." : "作成")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -37,7 +45,7 @@ struct CreateGroupView: View {
                         .cornerRadius(8)
                 }
                 .padding()
-                .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreating)
 
                 Spacer()
             }
@@ -49,6 +57,11 @@ struct CreateGroupView: View {
                         isPresented = false
                     }
                 }
+            }
+            .alert("作成できません", isPresented: $showCreateError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("通信状況を確認して、もう一度お試しください。")
             }
         }
     }

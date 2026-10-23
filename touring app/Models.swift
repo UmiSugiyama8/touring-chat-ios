@@ -13,6 +13,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     var senderName: String
     var sentAt: Date = Date()
     var senderDeviceID: String = ""
+    var senderAuthUID: String = ""
 }
 
 
@@ -21,6 +22,7 @@ struct TouringGroup: Identifiable, Hashable, Codable {
     var name: String
     var code: String
     var ownerDeviceID: String = ""
+    var ownerAuthUID: String = ""
     var memberCount: Int = 1
     var arrivedCount: Int = 0
     var lastMessageText: String = ""

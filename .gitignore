@@ -38,3 +38,10 @@ firebase-adminsdk*.json
 .env.*
 !.env.example
 
+# Public screenshots are withheld until reviewed for private data.
+AppStoreScreenshots/
+
+# Private signing / service credentials
+*.pem
+*.key
+

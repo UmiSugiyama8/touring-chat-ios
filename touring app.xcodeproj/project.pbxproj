@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		B7B088A72F9F49E500623355 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = B7B088A62F9F49E500623355 /* FirebaseAnalytics */; };
-		B7B088A92F9F5FEA00623355 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = B7B088A82F9F5FEA00623355 /* FirebaseMessaging */; };
 		B7D100012FC4A00100000001 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B7D100002FC4A00100000001 /* FirebaseAuth */; };
 		B7F60A272F9B854A00100882 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = B7F60A262F9B854A00100882 /* FirebaseFirestore */; };
 /* End PBXBuildFile section */
@@ -69,7 +68,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B7B088A92F9F5FEA00623355 /* FirebaseMessaging in Frameworks */,
 				B7B088A72F9F49E500623355 /* FirebaseAnalytics in Frameworks */,
 				B7D100012FC4A00100000001 /* FirebaseAuth in Frameworks */,
 				B7F60A272F9B854A00100882 /* FirebaseFirestore in Frameworks */,
@@ -142,7 +140,6 @@
 			packageProductDependencies = (
 				B7F60A262F9B854A00100882 /* FirebaseFirestore */,
 				B7B088A62F9F49E500623355 /* FirebaseAnalytics */,
-				B7B088A82F9F5FEA00623355 /* FirebaseMessaging */,
 				B7D100002FC4A00100000001 /* FirebaseAuth */,
 			);
 			productName = "touring app";
@@ -530,11 +527,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B7F60A252F9B854A00100882 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAnalytics;
-		};
-		B7B088A82F9F5FEA00623355 /* FirebaseMessaging */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B7F60A252F9B854A00100882 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMessaging;
 		};
 		B7D100002FC4A00100000001 /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
